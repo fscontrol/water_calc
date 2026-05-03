@@ -1,0 +1,19 @@
+[workspace]
+authors = ["DB <babaevdmitri@gmail.com>"]
+channels = ["conda-forge"]
+name = "water_calc"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+reaktoro = ">=2.13.0,<3"
+pint = ">=0.25.3,<0.26"
+pytest = ">=9.0.3,<10"
+scipy = ">=1.17.1,<2"
+numpy = ">=2.4.3,<3"
+
+[pypi-dependencies]
+psychrolib = ">=2.5.0, <3"
+jupyter = ">=1.1.1, <2"
