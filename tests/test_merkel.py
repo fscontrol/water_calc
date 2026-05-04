@@ -44,8 +44,10 @@ def test_temperature_floating():
     dt = Q_(10, u.delta_degC)
     air_hot = AirFlow(temp=Q_(40, u.degC), humidity=Q_(40, u.perc))
     solver_hot = MerkelSolver(1.0, 0.6, air_hot, WaterFlow(), Q_(30, u.degC))
-    t_in_h, t_out_h = solver_hot.estimate_temperatures(lg_fixed, dt)
+    t_in_h, t_out_h, error_message_h = solver_hot.estimate_temperatures(lg_fixed, dt)
     air_cold = AirFlow(temp=Q_(20, u.degC), humidity=Q_(60, u.perc))
     solver_cold = MerkelSolver(1.0, 0.6, air_cold, WaterFlow(), Q_(20, u.degC))
-    t_in_c, t_out_c = solver_cold.estimate_temperatures(lg_fixed, dt)
+    t_in_c, t_out_c, error_message_c = solver_cold.estimate_temperatures(lg_fixed, dt)
     assert t_out_c < t_out_h 
+    assert error_message_h is None
+    assert error_message_c is None
