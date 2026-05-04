@@ -156,3 +156,32 @@ class PoppeSolver:
             me = df.attrs["merkel_number"],
             fog = df.attrs["fog_carryover_kg_kg"],
             fog_force = float((df["zone"] == "fog").sum()/df["zone"].size*100.0))
+    
+    @classmethod
+    def find_temperatures_by_merkel(cls, air_in: AirFlow, target_merkel: float, delta_temp: Q_,
+        lg_ratio: float, water_salinity: Q_ = Q_(0, u.mg/u.kg)):
+        delta = delta_temp.to(u.degC).magnitude
+        t_wb = air_in.wet_bulb_temperature().to(u.degC).magnitude
+        t_min = t_wb + 1.0
+        t_max = t_wb + 50.0
+        def residual(t_in_magnitude):
+            t_in = Q_(t_in_magnitude, u.degC)
+            t_out = Q_(t_in_magnitude - delta, u.degC)
+            water = WaterFlow(temp=t_in, salinity=water_salinity)
+            solver = cls(air_in=air_in, water_in=water, water_temp_out=t_out, lg_ratio=lg_ratio)
+            df = solver.solve()
+            merkel_calc = df.attrs.get("merkel_number", 0.0)
+            return merkel_calc - target_merkel
+
+        f_min = residual(t_min)
+        f_max = residual(t_max)
+
+        if f_min * f_max > 0:
+            raise ValueError(
+                f"Не удалось найти корень. На границах функция одного знака.\n"
+                f"t_min={t_min:.2f}°C: Merkel={residual(t_min)+target_merkel:.4f} (цель={target_merkel:.4f})\n"
+                f"t_max={t_max:.2f}°C: Merkel={residual(t_max)+target_merkel:.4f} (цель={target_merkel:.4f})"
+            )
+        t_in_opt = brentq(residual, t_min, t_max, xtol=1e-3, rtol=1e-4)
+        t_out_opt = t_in_opt - delta
+        return Q_(t_in_opt, u.degC), Q_(t_out_opt, u.degC)
