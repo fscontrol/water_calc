@@ -51,6 +51,7 @@ from lib.cooling_tower.air import AirFlow
 from lib.cooling_tower.water import WaterFlow
 from lib.cooling_tower.poppe import PoppeSolver
 from lib.cooling_tower.common import Q_, u
+#or from lib import *
 
 air = AirFlow(temp=Q_(25, u.degC), humidity=Q_(50, u.perc))
 water = WaterFlow(temp=Q_(40, u.degC))
