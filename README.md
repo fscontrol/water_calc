@@ -1,25 +1,53 @@
-# Engineering Suite: Cooling Tower Thermodynamics & Water Chemistry
-##  Project Overview
+# Cooling Tower Calculation Library
 
-This project is a comprehensive tool for modeling industrial cooling towers, circulating water balances, and water treatment systems.
+A Python library for thermodynamic calculations of cooling towers using **Merkel** and **Poppe** methods. 
+The library supports complex calculations including fog formation, evaporation losses, and variable water salinity.
 
-### Current Progress
-Currently implemented:
-* **AirFlow:** Moist air property calculations (enthalpy, humidity ratio, wet-bulb temperature) using `psychrolib`.
-* **WaterFlow:** Physical properties of water and brines (density, viscosity, heat capacity) based on salinity.
-* **Merkel Method:** Classical Merkel Number ($Me$) calculations and cooling performance forecasting.
+## Project Structure
+```text
+.
+├── lib/
+│   └── cooling_tower/
+│       ├── __init__.py    # Exports all modules
+│       ├── air.py         # Air properties and psychrometrics
+│       ├── common.py      # Units (Pint) and Shared constants
+│       ├── merkel.py      # Merkel method implementation
+│       ├── water.py       # Water/Brine properties
+│       └── poppe.py       # Poppe method (ODE system)
+├── tests/                 # Pytest suite
+├── merkel.ipynb           # Examples for Merkel method
+├── poppe.ipynb            # Examples for Poppe method
+├── pixi.toml              # Environment management
+└── README.md
+```
 
-### Development Roadmap
-1.  **Poppe Method:** Transition from the simplified Merkel approach to a rigorous model (accounting for water mass loss and Lewis factor $Le \neq 1$).
-2.  **Chemistry with REAKTORO:** Modeling chemical equilibria in circulating water. Predicting saturation indices based on makeup water composition.
-3.  **Reverse Osmosis (RO):** A module for membrane performance normalization and makeup water desalination calculations.
+## Features
+- **Psychrometrics:** Powered by `psychrolib` (SI units).
+- **Unit Safety:** All inputs use `pint` for dimensional analysis.
+- **Poppe Method:** Solves a system of ODEs to account for water evaporation and fogging.
+- **Brine Support:** Includes salinity effects on density, viscosity, and latent heat.
 
----
+## Quick Start
+Using [Pixi](https://pixi.sh):
 
-## Tech Stack
-* **Python 3.10+**
-* **Pint:** Strict unit handling (SI and IP).
-* **SciPy/NumPy:** Numerical integration and solvers.
-* **Reaktoro:** Thermodynamic modeling of aqueous systems.
-* **Psychrolib:** Standardized psychrometric calculations.
-* **PIXI** package and virtual environment manager for Python
+```bash
+# Run tests
+pixi run pytest
+
+# Launch notebooks
+pixi run jupyter lab
+```
+
+## Usage Example
+```python
+from lib.cooling_tower.air import AirFlow
+from lib.cooling_tower.water import WaterFlow
+from lib.cooling_tower.poppe import PoppeSolver
+from lib.cooling_tower.common import Q_, u
+
+air = AirFlow(temp=Q_(25, u.degC), humidity=Q_(50, u.perc))
+water = WaterFlow(temp=Q_(40, u.degC))
+solver = PoppeSolver(air, water, water_temp_out=Q_(30, u.degC), lg_ratio=1.2)
+
+results_df = solver.solve()
+print(results_df.tail())
