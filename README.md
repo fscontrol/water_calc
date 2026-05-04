@@ -31,9 +31,16 @@ The library supports complex calculations including fog formation, evaporation l
 Using [Pixi](https://pixi.sh):
 
 ```bash
+# install pixi
+#for LINUX  (developed and tested under LINUX)
+curl -fsSL https://pixi.sh/install.sh | bash
+#for Windows
+iwr -useb https://pixi.sh/install.ps1 | iex
+#install dependencies
+cd /path/to/downloaded/project
+pixi install
 # Run tests
 pixi run pytest
-
 # Launch notebooks
 pixi run jupyter lab
 ```
