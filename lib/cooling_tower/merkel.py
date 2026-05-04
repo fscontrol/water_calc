@@ -1,10 +1,8 @@
-import numpy as np
 from scipy.integrate import quad
 from scipy.optimize import fsolve, brentq # Добавили brentq
 from .air import AirFlow
 from .water import WaterFlow
-from .common import u, Q_
-
+from .common import *
 class MerkelSolver:
     def __init__(self, C, n, air_in: AirFlow, water_in: WaterFlow, water_temp_out: Q_):
         self.air_in = air_in

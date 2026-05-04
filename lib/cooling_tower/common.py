@@ -1,5 +1,6 @@
 import pint
 import psychrolib
+import numpy as np
 
 u = pint.UnitRegistry()
 u.define('ratio = [humidity] = fraction')
