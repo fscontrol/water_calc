@@ -13,7 +13,9 @@ The library supports complex calculations including fog formation, evaporation l
 │       ├── common.py      # Units (Pint) and Shared constants
 │       ├── merkel.py      # Merkel method implementation
 │       ├── water.py       # Water/Brine properties
-│       └── poppe.py       # Poppe method (ODE system)
+│       ├── poppe.py       # Poppe method (ODE system)
+|       └── __init__.py
+|    └──__init__.py
 ├── tests/                 # Pytest suite
 ├── merkel.ipynb           # Examples for Merkel method
 ├── poppe.ipynb            # Examples for Poppe method
