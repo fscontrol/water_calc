@@ -1,3 +1,17 @@
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Pixi & Environments
+.pixi/
+pixi.lock
+
+# Data & Results
+*.log
+results/
