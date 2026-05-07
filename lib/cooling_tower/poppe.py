@@ -5,61 +5,26 @@ from .air import AirFlow
 from .water import WaterFlow
 import pandas as pd
 from scipy.integrate import trapezoid
+from .mixins import SolverMixin, TemporarySetMixin
+from .units_descriptor import cleans_simple
 
-class PoppeSolver:
-    def __init__(self, air_in: AirFlow, water_in: WaterFlow, water_temp_out: Q_, lg_ratio: float):
-        self.air_in = air_in
-        self.water_in = water_in
-        self.t_out = water_temp_out.to(u.degC).magnitude
-        self.t_in = water_in.temp.to(u.degC).magnitude
-        self.lg_ratio = lg_ratio
 
-    def _t_air_from_ha_saturated(self, ha: float, tw: float) -> float:
-        def residual(t_air):
-            w_sat = psychrolib.GetHumRatioFromRelHum(t_air, 1.0, self.air_in.pressure)
-            h_sat = psychrolib.GetMoistAirEnthalpy(t_air, w_sat)
-            return h_sat - ha
-        h_lo = residual(0.1)
-        h_hi = residual(tw - 0.01)
-        if h_lo * h_hi > 0:
-            return AirFlow.calc_temperature_from_h_w(ha, 
-                psychrolib.GetHumRatioFromRelHum(
-                    AirFlow.calc_temperature_from_h_w(ha, 
-                        psychrolib.GetHumRatioFromRelHum(20.0, 1.0, self.air_in.pressure)
-                    ), 1.0, self.air_in.pressure
-                )
-            )
-        return brentq(residual, 0.1, tw - 0.01, xtol=1e-4)
-
-    def _cp_saturated_air(self, t_air: float) -> float:
-        dt = 0.05
-        w1 = psychrolib.GetHumRatioFromRelHum(t_air + dt, 1.0, self.air_in.pressure)
-        w2 = psychrolib.GetHumRatioFromRelHum(t_air - dt, 1.0, self.air_in.pressure)
-        h1 = psychrolib.GetMoistAirEnthalpy(t_air + dt, w1)
-        h2 = psychrolib.GetMoistAirEnthalpy(t_air - dt, w2)
-        return (h1 - h2) / (2 * dt)
-
-    def _dw_sat_dT(self, t_air: float) -> float:
-        dt = 0.05
-        w1 = psychrolib.GetHumRatioFromRelHum(t_air + dt, 1.0, self.air_in.pressure)
-        w2 = psychrolib.GetHumRatioFromRelHum(t_air - dt, 1.0, self.air_in.pressure)
-        return (w1 - w2) / (2 * dt)
-
+class PoppeSolver(SolverMixin, TemporarySetMixin):
     def poppe_system(self, tw, y):
         ha, omega = y
-        h_sw = self.air_in.saturated_air_enthalpy(Q_(tw, u.degC)).magnitude
-        w_sw = self.air_in.saturated_omega(Q_(tw, u.degC)).magnitude
-        le = self.air_in.lewis_factor(Q_(tw, u.degC))
-        hv = 2501000 + 1860 * tw
-        cp_w = self.water_in.specific_heat(temperature=Q_(tw, u.degC)).magnitude
+        h_sw = self.air_in.saturated_air_enthalpy(temp=tw)
+        w_sw = self.air_in.saturated_omega(temp=tw)
+        le = self.air_in.lewis_factor(temp=tw)
+        hv = self.air_in.vapor_enthalpy(temp=tw)
+        cp_w = self.water_in.specific_heat(temp=tw)
         d_ha_dtw = self.lg_ratio * cp_w
-        t_air_dry = AirFlow.calc_temperature_from_h_w(ha, omega)
-        w_sw_air = psychrolib.GetHumRatioFromRelHum(t_air_dry, 1.0, self.air_in.pressure)
+        t_air_dry = self.air_in.temperature_from_h_w(ha, omega)
+        w_sw_air = self.air_in.omega(temp=t_air_dry, rh=1.0)
         if omega >= w_sw_air:
-            t_air_sat = self._t_air_from_ha_saturated(ha, tw)
-            cp_as = self._cp_saturated_air(t_air_sat)
+            t_air_sat = self.air_in.t_air_from_enthalpy_saturated(ha, tw)
+            cp_as = self.air_in.cp_saturated_air(temp=t_air_sat)
             dT_air_dT_w = d_ha_dtw / cp_as
-            dw_dT_air = self._dw_sat_dT(t_air_sat)
+            dw_dT_air = self.air_in.dw_sat_dT(temp=t_air_sat)
             d_omega_dtw = dw_dT_air * dT_air_dT_w
         else:
             denom = (h_sw - ha) + (le - 1.0) * ((h_sw - ha) - (w_sw - omega) * hv)
@@ -67,20 +32,16 @@ class PoppeSolver:
         return [d_ha_dtw, d_omega_dtw]
 
     def solve(self):
-        """
-        Integral from bottom to top (from t_out to t_in).
-        Returns DataFrame with air profile along tower height.
-        """
-        ha_in = self.air_in.wet_air_enthalpy().magnitude
-        omega_in = self.air_in.omega().magnitude
+        ha_in = self.air_in.wet_air_enthalpy()
+        omega_in = self.air_in.omega()
         y0 = [ha_in, omega_in]
 
         try:
             sol = solve_ivp(
                 self.poppe_system,
-                (self.t_out, self.t_in),
+                (self.water_out.temp, self.water_in.temp),
                 y0,
-                t_eval=np.linspace(self.t_out, self.t_in, 50),
+                t_eval=np.linspace(self.water_out.temp, self.water_in.temp, 50),
                 method='Radau',
                 rtol=1e-4,
                 atol=1e-7,
@@ -92,13 +53,13 @@ class PoppeSolver:
         if sol.status != 0:
             raise ValueError(
                 f"Poppe solver did not converge: {sol.message}\n"
-                f"Reached tw={sol.t[-1]:.2f}°C of {self.t_in:.2f}°C"
+                f"Reached tw={sol.t[-1]:.2f}°C of {self.water_in.temp:.2f}°C"
             )
-        air_temperatures, air_humidities = self.air_in.decode_results(sol.y[0], sol.y[1])
+        air_temperatures, air_humidities = self.decode_results(h_array=sol.y[0], omega_array=sol.y[1], press=self.air_in.press)
         zones = []
         fog_water = []
         for i, (h, w, t_a) in enumerate(zip(sol.y[0], sol.y[1], air_temperatures)):
-            w_sw_air = psychrolib.GetHumRatioFromRelHum(t_a, 1.0, self.air_in.pressure)
+            w_sw_air = self.air_in.omega(temp=t_a, rh=1.0)
             if w > w_sw_air:
                 zones.append("fog")
                 fog_water.append((w - w_sw_air))  
@@ -118,31 +79,26 @@ class PoppeSolver:
         omega_out = sol.y[1][-1]
         omega_in  = sol.y[1][0]
 
-        # T_air на выходе
         t_air_out = air_temperatures[-1]
-        w_sw_air_out = psychrolib.GetHumRatioFromRelHum(t_air_out, 1.0, self.air_in.pressure)
+        w_sw_air_out = self.air_in.omega(temp=t_air_out, rh=1.0)
 
-        if omega_out > w_sw_air_out:
-            # Часть omega — это туман (капли), часть — пар
+        if omega_out > w_sw_air_out:            # Часть omega — это туман (капли), часть — пар
             omega_vapor_out = w_sw_air_out          # пар
             omega_fog_out   = omega_out - w_sw_air_out  # туман (капли)
         else:
             omega_vapor_out = omega_out
             omega_fog_out   = 0.0
 
-        # Испарение и унос на 1 кг циркулирующей воды
-        G_per_L = 1.0 / self.lg_ratio  # кг воздуха на кг воды
-
-        evaporation  = (omega_vapor_out - omega_in) * G_per_L  # кг пара / кг воды
-        fog_carryover = omega_fog_out * G_per_L                 # кг тумана / кг воды
-        total_loss   = evaporation + fog_carryover              # кг воды / кг воды
+        evaporation  = (omega_vapor_out - omega_in) / self.lg_ratio  
+        fog_carryover = omega_fog_out / self.lg_ratio                 
+        total_loss   = evaporation + fog_carryover              
 
         df.attrs['evaporation_kg_kg']   = evaporation
         df.attrs['fog_carryover_kg_kg'] = fog_carryover
         df.attrs['total_water_loss_kg_kg'] = total_loss
-        h_sw_arr = [self.air_in.saturated_air_enthalpy(Q_(tw, u.degC)).magnitude 
+        h_sw_arr = [self.air_in.saturated_air_enthalpy(temp=tw) 
                     for tw in df['water_temp_c']]
-        cp_w_arr = [self.water_in.specific_heat(temperature=Q_(tw, u.degC)).magnitude 
+        cp_w_arr = [self.water_in.specific_heat(temp=tw) 
                     for tw in df['water_temp_c']]
         integrand = [cp / max(h_sw - ha, 1.0) 
                     for cp, h_sw, ha in zip(cp_w_arr, h_sw_arr, df['air_enthalpy_j_kg'])]
@@ -157,22 +113,18 @@ class PoppeSolver:
             fog = df.attrs["fog_carryover_kg_kg"],
             fog_force = float((df["zone"] == "fog").sum()/df["zone"].size*100.0))
     
-    @classmethod
-    def find_temperatures_by_merkel(cls, air_in: AirFlow, target_merkel: float, delta_temp: Q_,
-        lg_ratio: float, water_salinity: Q_ = Q_(0, u.mg/u.kg)):
-        delta = delta_temp.to(u.degC).magnitude
-        t_wb = air_in.wet_bulb_temperature().to(u.degC).magnitude
+    @cleans_simple(delta_temp=u.delta_degC)
+    def find_temperatures_by_merkel(self, target_merkel: float, delta_temp=None):
+        t_wb = self.air_in.wet_bulb_temperature()
         t_min = t_wb + 1.0
         t_max = t_wb + 50.0
-        def residual(t_in_magnitude):
-            t_in = Q_(t_in_magnitude, u.degC)
-            t_out = Q_(t_in_magnitude - delta, u.degC)
-            water = WaterFlow(temp=t_in, salinity=water_salinity)
-            solver = cls(air_in=air_in, water_in=water, water_temp_out=t_out, lg_ratio=lg_ratio)
+        def residual(t):
+            water_in = WaterFlow(temp=t, salinity=self.water_in.salinity)
+            water_out = WaterFlow(temp=t - delta_temp, salinity=self.water_in.salinity)
+            solver = PoppeSolver(air_in=self.air_in, water_in=water_in, water_out=water_out, lg_ratio= self.lg_ratio, C=self.C, n=self.n)
             df = solver.solve()
             merkel_calc = df.attrs.get("merkel_number", 0.0)
             return merkel_calc - target_merkel
-
         f_min = residual(t_min)
         f_max = residual(t_max)
 
@@ -183,5 +135,16 @@ class PoppeSolver:
                 f"t_max={t_max:.2f}°C: Merkel={residual(t_max)+target_merkel:.4f} (цель={target_merkel:.4f})"
             )
         t_in_opt = brentq(residual, t_min, t_max, xtol=1e-3, rtol=1e-4)
-        t_out_opt = t_in_opt - delta
-        return Q_(t_in_opt, u.degC), Q_(t_out_opt, u.degC)
+        t_out_opt = t_in_opt - delta_temp
+        return t_in_opt, t_out_opt
+    
+    @cleans_simple(press=u.Pa)
+    def decode_results(self, h_array: np.array, omega_array: np.array, press: float) -> tuple[np.array, np.array]:
+        t_air_list = []
+        rh_list = []
+        for h, w in zip(h_array, omega_array):
+            t_a = self.air_in.temperature_from_h_w(h_j_kg=h, omega_kg_kg=w)
+            rh = self.air_in.rh_from_temperature_omega(temp=t_a, omega=w, press=press)
+            t_air_list.append(t_a)
+            rh_list.append(rh)
+        return np.array(t_air_list), np.array(rh_list) 
