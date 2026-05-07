@@ -67,10 +67,10 @@ class PoppeSolver(SolverMixin, TemporarySetMixin):
                 zones.append("unsaturated")
                 fog_water.append(0.0)
 
-        df = pd.DataFrame({
+        self.profiles = pd.DataFrame({
             "water_temp_c":      sol.t,
             "air_temp_c":        air_temperatures,
-            "air_rh_perc":       air_humidities,
+            "air_rh_perc":       air_humidities*100.0,
             "air_omega_kg_kg":   sol.y[1],
             "air_enthalpy_j_kg": sol.y[0],
             "fog_kg_kg":          fog_water,   # туман в г воды на кг сухого воздуха
@@ -89,29 +89,19 @@ class PoppeSolver(SolverMixin, TemporarySetMixin):
             omega_vapor_out = omega_out
             omega_fog_out   = 0.0
 
-        evaporation  = (omega_vapor_out - omega_in) / self.lg_ratio  
-        fog_carryover = omega_fog_out / self.lg_ratio                 
-        total_loss   = evaporation + fog_carryover              
+        self.evaporation  = (omega_vapor_out - omega_in) / self.lg_ratio  
+        self.fog_carryover = omega_fog_out / self.lg_ratio                 
+        self.total_loss   = self.evaporation + self.fog_carryover  
+        self.fog_force = (self.profiles['zone'] == "fog").sum() / self.profiles['zone'].size*100.0            
 
-        df.attrs['evaporation_kg_kg']   = evaporation
-        df.attrs['fog_carryover_kg_kg'] = fog_carryover
-        df.attrs['total_water_loss_kg_kg'] = total_loss
         h_sw_arr = [self.air_in.saturated_air_enthalpy(temp=tw) 
-                    for tw in df['water_temp_c']]
+                    for tw in self.profiles['water_temp_c']]
         cp_w_arr = [self.water_in.specific_heat(temp=tw) 
-                    for tw in df['water_temp_c']]
+                    for tw in self.profiles['water_temp_c']]
         integrand = [cp / max(h_sw - ha, 1.0) 
-                    for cp, h_sw, ha in zip(cp_w_arr, h_sw_arr, df['air_enthalpy_j_kg'])]
-        me = trapezoid(integrand, df['water_temp_c'])  
-        df.attrs["merkel_number"] = me      
-        return df
-    @staticmethod
-    def process_results(df):
-        return dict(
-            evaporation = df.attrs["total_water_loss_kg_kg"],
-            me = df.attrs["merkel_number"],
-            fog = df.attrs["fog_carryover_kg_kg"],
-            fog_force = float((df["zone"] == "fog").sum()/df["zone"].size*100.0))
+                    for cp, h_sw, ha in zip(cp_w_arr, h_sw_arr, self.profiles['air_enthalpy_j_kg'])]
+        me = trapezoid(integrand, self.profiles['water_temp_c'])       
+        return float(me)
     
     @cleans_simple(delta_temp=u.delta_degC)
     def find_temperatures_by_merkel(self, target_merkel: float, delta_temp=None):

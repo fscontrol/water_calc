@@ -1,5 +1,7 @@
 from contextlib import contextmanager
 from .common import *
+from .units_descriptor import cleans_simple
+from scipy.optimize import brentq
 
 class UnitMagicMixin:
     def __getattr__(self, name):
@@ -56,3 +58,44 @@ class SolverMixin:
     def target_me(self, lg_ratio=None):
         lg = lg_ratio if lg_ratio is not None else self.lg_ratio
         return self.C * (lg**(-self.n))
+
+    @cleans_simple(delta_t=u.delta_degC)
+    def estimate_temperatures(self, lg_ratio=None, delta_t=10.0, target_me=None, return_units=False):
+        lg = lg_ratio if lg_ratio is not None else self.lg_ratio
+        dt_val = delta_t
+        twb = self.air_in.wet_bulb_temperature()
+        me_avail = target_me if target_me is not None else self.target_me(lg)
+        error_message = None
+
+        def objective(t_out_guess):
+            current_t_out = float(t_out_guess[0] if hasattr(t_out_guess, "__len__") else t_out_guess)
+            current_t_in = current_t_out + dt_val 
+            with self.water_in.temporary_set(temp=current_t_in):
+                with self.water_out.temporary_set(temp=current_t_out):   
+                    temp_solver = self.__class__(
+                        C=self.C, n=self.n, air_in=self.air_in, 
+                        water_in=self.water_in, water_out=self.water_out, 
+                        lg_ratio=lg
+                    )       
+                    return temp_solver.solve() - me_avail
+        a = 1.0
+        b = 90.0 - dt_val  
+        fa = objective(a)
+        fb = objective(b)           
+        if fa * fb < 0:
+            t_out_final = brentq(objective, a, b, xtol=1e-4)
+        else:
+            if fa < 0:
+                error_message = f"Coolign tower Merkel is higher than required Tlow={a}, LG = {lg_ratio} ME = {me_avail}"
+                t_out = a
+                return t_out + delta_t, t_out, error_message
+            else:
+                error_message = f"Cooling tower Merkel is lower than required Tlow={a}, LG = {lg_ratio} ME = {me_avail}"
+                raise Exception(error_message)
+
+        t_out_res = t_out_final
+        t_in_res = t_out_res + delta_t
+        if return_units:
+            return Q_(t_in_res, u.degC), Q_(t_out_res, u.degC), error_message
+        else:
+            return t_in_res, t_out_res, error_message

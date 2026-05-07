@@ -12,18 +12,20 @@ def snip_evaporation_ratio(delta_t_celsius: float, k_i_per_deg_c: float = 0.0012
 
 
 def test_poppe_solver_execution():
-    """Check if the solver runs and returns a non-empty DataFrame."""
+    """Solver should return me and fill profile fields."""
     air_in = AirFlow(temperature=Q_(25, u.degC), humidity=Q_(60, u.perc))
     water_in = WaterFlow(temperature=Q_(40, u.degC))
     water_out = WaterFlow(temperature=Q_(30, u.degC))
     lg = 1.0
 
     solver = PoppeSolver(air_in, water_in, water_out, lg)
-    df = solver.solve()
+    me = solver.solve()
 
-    assert not df.empty
-    assert 'air_enthalpy_j_kg' in df.columns
-    assert 'water_temp_c' in df.columns
+    assert me > 0
+    assert hasattr(solver, "profiles")
+    assert not solver.profiles.empty
+    assert "air_enthalpy_j_kg" in solver.profiles.columns
+    assert "water_temp_c" in solver.profiles.columns
 
 def test_poppe_physics_trends():
     """Air enthalpy should increase as it moves through the tower."""
@@ -32,10 +34,10 @@ def test_poppe_physics_trends():
     water_out = WaterFlow(temperature=Q_(32, u.degC))
 
     solver = PoppeSolver(air_in, water_in, water_out, lg_ratio=1.0)
-    df = solver.solve()
+    solver.solve()
 
-    h_start = df['air_enthalpy_j_kg'].iloc[0]
-    h_end = df['air_enthalpy_j_kg'].iloc[-1]
+    h_start = solver.profiles["air_enthalpy_j_kg"].iloc[0]
+    h_end = solver.profiles["air_enthalpy_j_kg"].iloc[-1]
 
     # In a cooling tower, air absorbs heat
     assert h_end > h_start
@@ -46,11 +48,11 @@ def test_poppe_mass_balance():
     water_in = WaterFlow(temperature=Q_(45, u.degC))
     water_out = WaterFlow(temperature=Q_(35, u.degC))
     solver = PoppeSolver(air_in, water_in, water_out, lg_ratio=1.1)
-    df = solver.solve()
+    solver.solve()
 
     # Check attributes stored in metadata
-    assert df.attrs['evaporation_kg_kg'] > 0
-    assert df.attrs['total_water_loss_kg_kg'] >= df.attrs['evaporation_kg_kg']
+    assert solver.evaporation > 0
+    assert solver.total_loss >= solver.evaporation
 
 
 def test_poppe_evaporation_vs_snip_order_of_magnitude_at_20c():
@@ -61,8 +63,9 @@ def test_poppe_evaporation_vs_snip_order_of_magnitude_at_20c():
     air_in = AirFlow(temperature=Q_(20, u.degC), humidity=Q_(60, u.perc))
     water_in = WaterFlow(temp=t_in)
     water_out = WaterFlow(temp=t_out)
-    df = PoppeSolver(air_in, water_in, water_out, lg_ratio=1.0).solve()
-    e_poppe = float(df.attrs["evaporation_kg_kg"])
+    solver = PoppeSolver(air_in, water_in, water_out, lg_ratio=1.0)
+    solver.solve()
+    e_poppe = float(solver.evaporation)
     e_snip = snip_evaporation_ratio(delta_t)
     assert e_poppe > 0
     # Детальная модель не обязана совпадать с графиком k_и; ожидаем тот же порядок
@@ -73,13 +76,38 @@ def test_poppe_evaporation_increases_with_water_delta_t():
     """При прочих равных больший перепад воды даёт не меньшее испарение (Поппе)."""
     air_in = AirFlow(temperature=Q_(20, u.degC), humidity=Q_(50, u.perc))
     t_out = 28.0
-    df_small = PoppeSolver(
-        air_in, WaterFlow(temp=38.0), WaterFlow(temp=t_out), 1.0
-    ).solve()
-    df_large = PoppeSolver(
-        air_in, WaterFlow(temp=45.0), WaterFlow(temp=t_out), 1.0
-    ).solve()
-    assert df_large.attrs["evaporation_kg_kg"] >= df_small.attrs["evaporation_kg_kg"]
+    solver_small = PoppeSolver(air_in, WaterFlow(temp=38.0), WaterFlow(temp=t_out), 1.0)
+    solver_large = PoppeSolver(air_in, WaterFlow(temp=45.0), WaterFlow(temp=t_out), 1.0)
+    solver_small.solve()
+    solver_large.solve()
+    assert solver_large.evaporation >= solver_small.evaporation
+
+
+def test_poppe_estimate_temperatures_hits_target_merkel():
+    air_in = AirFlow(temperature=Q_(22, u.degC), humidity=Q_(55, u.perc))
+    base = PoppeSolver(
+        air_in=air_in,
+        water_in=WaterFlow(temp=42.0),
+        water_out=WaterFlow(temp=30.0),
+        lg_ratio=1.0,
+        C=1.0,
+        n=0.6,
+    )
+    target_me = base.solve()
+    t_in, t_out, err = base.estimate_temperatures(
+        lg_ratio=1.0, delta_t=Q_(12, u.delta_degC), target_me=target_me
+    )
+    assert err is None
+    check = PoppeSolver(
+        air_in=air_in,
+        water_in=WaterFlow(temp=t_in),
+        water_out=WaterFlow(temp=t_out),
+        lg_ratio=1.0,
+        C=1.0,
+        n=0.6,
+    )
+    me_check = check.solve()
+    assert me_check == pytest.approx(target_me, rel=1e-2)
 
 
 def test_snip_evaporation_ratio_numeric_examples():
