@@ -1,7 +1,9 @@
+from __future__ import annotations
 from contextlib import contextmanager
 from .common import *
 from .units_descriptor import cleans_simple
 from scipy.optimize import brentq
+
 
 class UnitMagicMixin:
     def __getattr__(self, name):
