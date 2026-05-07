@@ -103,31 +103,6 @@ class PoppeSolver(SolverMixin, TemporarySetMixin):
         me = trapezoid(integrand, self.profiles['water_temp_c'])       
         return float(me)
     
-    @cleans_simple(delta_temp=u.delta_degC)
-    def find_temperatures_by_merkel(self, target_merkel: float, delta_temp=None):
-        t_wb = self.air_in.wet_bulb_temperature()
-        t_min = t_wb + 1.0
-        t_max = t_wb + 50.0
-        def residual(t):
-            water_in = WaterFlow(temp=t, salinity=self.water_in.salinity)
-            water_out = WaterFlow(temp=t - delta_temp, salinity=self.water_in.salinity)
-            solver = PoppeSolver(air_in=self.air_in, water_in=water_in, water_out=water_out, lg_ratio= self.lg_ratio, C=self.C, n=self.n)
-            df = solver.solve()
-            merkel_calc = df.attrs.get("merkel_number", 0.0)
-            return merkel_calc - target_merkel
-        f_min = residual(t_min)
-        f_max = residual(t_max)
-
-        if f_min * f_max > 0:
-            raise ValueError(
-                f"Не удалось найти корень. На границах функция одного знака.\n"
-                f"t_min={t_min:.2f}°C: Merkel={residual(t_min)+target_merkel:.4f} (цель={target_merkel:.4f})\n"
-                f"t_max={t_max:.2f}°C: Merkel={residual(t_max)+target_merkel:.4f} (цель={target_merkel:.4f})"
-            )
-        t_in_opt = brentq(residual, t_min, t_max, xtol=1e-3, rtol=1e-4)
-        t_out_opt = t_in_opt - delta_temp
-        return t_in_opt, t_out_opt
-    
     @cleans_simple(press=u.Pa)
     def decode_results(self, h_array: np.array, omega_array: np.array, press: float) -> tuple[np.array, np.array]:
         t_air_list = []
