@@ -2,14 +2,7 @@ from enum import Enum, auto
 import pint 
 from functools import wraps
 import inspect
-import pint
-u = pint.UnitRegistry()
-Q_ = u.Quantity
-
-u = pint.UnitRegistry()
-u.define('ratio = [humidity] = fraction')
-u.define('perc = 0.01 * ratio = rh')
-Q_ = u.Quantity
+from .common import u, Q_
 
 class QuantityType(Enum):
     """Типы физических величин"""

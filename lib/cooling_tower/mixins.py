@@ -80,7 +80,7 @@ class SolverMixin:
                         lg_ratio=lg
                     )       
                     return temp_solver.solve() - me_avail
-        a = 1.0
+        a = twb + 2.0
         b = 90.0 - dt_val  
         fa = objective(a)
         fb = objective(b)           
@@ -101,3 +101,16 @@ class SolverMixin:
             return Q_(t_in_res, u.degC), Q_(t_out_res, u.degC), error_message
         else:
             return t_in_res, t_out_res, error_message
+    def find_operating_lg(self):
+        def objective(lg):
+            lg = float(lg)
+            me_req = self.solve(lg)
+            me_avail = self.target_me(lg)
+            return me_req - me_avail
+        a, b = 0.1, 10.0
+        f_a, f_b = objective(a), objective(b)
+        if f_a * f_b < 0:
+            lg_final = brentq(objective, a, b, xtol=1e-4)
+        else:
+            raise Exception(f"No solution found for LG ratio between {a} and {b}")
+        return float(lg_final)

@@ -11,6 +11,7 @@ from .units_descriptor import cleans_simple
 
 class PoppeSolver(SolverMixin, TemporarySetMixin):
     def poppe_system(self, tw, y):
+        print(tw, y)
         ha, omega = y
         h_sw = self.air_in.saturated_air_enthalpy(temp=tw)
         w_sw = self.air_in.saturated_omega(temp=tw)
@@ -19,6 +20,7 @@ class PoppeSolver(SolverMixin, TemporarySetMixin):
         cp_w = self.water_in.specific_heat(temp=tw)
         d_ha_dtw = self.lg_ratio * cp_w
         t_air_dry = self.air_in.temperature_from_h_w(ha, omega)
+        
         w_sw_air = self.air_in.omega(temp=t_air_dry, rh=1.0)
         if omega >= w_sw_air:
             t_air_sat = self.air_in.t_air_from_enthalpy_saturated(ha, tw)
@@ -31,7 +33,8 @@ class PoppeSolver(SolverMixin, TemporarySetMixin):
             d_omega_dtw = (cp_w * self.lg_ratio * (w_sw - omega)) / max(denom, 1e-7)
         return [d_ha_dtw, d_omega_dtw]
 
-    def solve(self):
+    def solve(self, lg_ratio=None):
+        lg = lg_ratio if lg_ratio is not None else self.lg_ratio
         ha_in = self.air_in.wet_air_enthalpy()
         omega_in = self.air_in.omega()
         y0 = [ha_in, omega_in]
