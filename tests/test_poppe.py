@@ -94,10 +94,9 @@ def test_poppe_estimate_temperatures_hits_target_merkel():
         n=0.6,
     )
     target_me = base.solve()
-    t_in, t_out, err = base.estimate_temperatures(
+    t_in, t_out = base.estimate_temperatures(
         lg_ratio=1.0, delta_t=Q_(12, u.delta_degC), target_me=target_me
     )
-    assert err is None
     check = PoppeSolver(
         air_in=air_in,
         water_in=WaterFlow(temp=t_in),

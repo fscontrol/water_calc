@@ -13,8 +13,8 @@ class AirFlow(UnitMagicMixin, TemporarySetMixin):
     EVW = 2501000.0
     
     @cleans_simple(temp=u.degC, rh=u.ratio, press=u.Pa)
-    def __init__(self, temp=25.0, rh=0.4, press=101325.0, **kwargs):
-        self.temp, self.rh, self.press = temp, rh, press
+    def __init__(self, temp=25.0, rh=0.4, press=101325.0, flow=1.0, **kwargs):
+        self.temp, self.rh, self.press, self.flow = temp, rh, press, flow
         for k, v in kwargs.items():
             setattr(self, k, v)
     
@@ -108,3 +108,20 @@ class AirFlow(UnitMagicMixin, TemporarySetMixin):
     @cleans(temp=u.degC, omega=u.kg/u.kg, press=u.Pa)
     def rh_from_temperature_omega(self, temp: float, omega: float, press=None) -> float:
         return psychrolib.GetRelHumFromHumRatio(temp, omega, self.press)
+    
+    def __str__(self):
+        return f"AirFlow(temp={self.temp}, rh={self.rh}, press={self.press})"
+    
+    @returns(u.kg/u.m**3)
+    @cleans(temp=u.degC, rh=u.ratio, press=u.Pa)
+    def density(self, temp=None, rh=None, press=None):
+        w = self.omega(temp, rh, press)
+        return psychrolib.GetMoistAirDensity(temp, w, press)
+    
+    @returns(u.kg)
+    @cleans(temp=u.degC, rh=u.ratio, press=u.Pa)
+    @cleans_simple(volume=u.m**3)
+    def volume_to_dry_mass(self, volume, temp=None, rh=None, press=None):
+        w = self.omega(temp, rh, press)
+        rho = psychrolib.GetMoistAirDensity(temp, w, press)
+        return volume * rho / (1.0 + w)

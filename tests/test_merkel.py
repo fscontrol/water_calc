@@ -42,8 +42,7 @@ def test_air_enthalpy_at_outlet_equals_inlet_when_delta_t_zero():
 def test_estimate_temperatures_return_units():
     air = AirFlow(temp=25.0, rh=0.5)
     solver = MerkelSolver(air, WaterFlow(temp=35.0), WaterFlow(temp=25.0), 1.0, 1.0, 0.6)
-    t_in, t_out, err = solver.estimate_temperatures(1.0, Q_(8, u.delta_degC), return_units=True)
-    assert err is None
+    t_in, t_out = solver.estimate_temperatures(1.0, Q_(8, u.delta_degC), return_units=True)
     assert hasattr(t_in, "magnitude")
     assert t_in.magnitude == pt.approx(t_out.magnitude + 8.0, abs=0.01)
 
@@ -51,8 +50,8 @@ def test_estimate_temperatures_delta_as_quantity_matches_scalar():
     air = AirFlow(temperature=Q_(40, u.degC), humidity=Q_(40, u.perc))
     solver = MerkelSolver(air, WaterFlow(), WaterFlow(temperature=Q_(30, u.degC)), 1.0, 1.0, 0.6)
     dt_mag = Q_(10, u.delta_degC).magnitude
-    t_in1, t_out1, _ = solver.estimate_temperatures(1.0, dt_mag)
-    t_in2, t_out2, _ = solver.estimate_temperatures(1.0, Q_(10, u.delta_degC))
+    t_in1, t_out1 = solver.estimate_temperatures(1.0, dt_mag)
+    t_in2, t_out2 = solver.estimate_temperatures(1.0, Q_(10, u.delta_degC))
     assert t_in1 == pt.approx(t_in2)
     assert t_out1 == pt.approx(t_out2)
 
@@ -99,10 +98,8 @@ def test_temperature_floating():
     dt = Q_(10, u.delta_degC).magnitude
     air_hot = AirFlow(temperature=Q_(40, u.degC), humidity=Q_(40, u.perc))
     solver_hot = MerkelSolver(air_hot, WaterFlow(), WaterFlow(temperature=Q_(30, u.degC)), 1.0, 1.0, 0.6)
-    t_in_h, t_out_h, error_message_h = solver_hot.estimate_temperatures(lg_fixed, dt)
+    t_in_h, t_out_h = solver_hot.estimate_temperatures(lg_fixed, dt)
     air_cold = AirFlow(temperature=Q_(20, u.degC), humidity=Q_(60, u.perc))
     solver_cold = MerkelSolver(air_cold, WaterFlow(), WaterFlow(temperature=Q_(20, u.degC)), 1.0, 1.0, 0.6)
-    t_in_c, t_out_c, error_message_c = solver_cold.estimate_temperatures(lg_fixed, dt)
+    t_in_c, t_out_c = solver_cold.estimate_temperatures(lg_fixed, dt)
     assert t_out_c < t_out_h 
-    assert error_message_h is None
-    assert error_message_c is None

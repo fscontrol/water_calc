@@ -67,8 +67,7 @@ class SolverMixin:
         dt_val = delta_t
         twb = self.air_in.wet_bulb_temperature()
         me_avail = target_me if target_me is not None else self.target_me(lg)
-        error_message = None
-
+        
         def objective(t_out_guess):
             current_t_out = float(t_out_guess[0] if hasattr(t_out_guess, "__len__") else t_out_guess)
             current_t_in = current_t_out + dt_val 
@@ -81,26 +80,31 @@ class SolverMixin:
                     )       
                     return temp_solver.solve() - me_avail
         a = twb + 2.0
-        b = 90.0 - dt_val  
-        fa = objective(a)
+        b = 90.0 - dt_val
+        flag = False
+        while not flag:
+            try:
+                fa = objective(a)
+                flag = True 
+            except ValueError:
+                a += 0.1
+            if a > b:
+                raise Exception("For this Me and LG ratio delta T is too high or T_cold is too low")
         fb = objective(b)           
         if fa * fb < 0:
             t_out_final = brentq(objective, a, b, xtol=1e-4)
         else:
             if fa < 0:
-                error_message = f"Coolign tower Merkel is higher than required Tlow={a}, LG = {lg_ratio} ME = {me_avail}"
-                t_out = a
-                return t_out + delta_t, t_out, error_message
+                raise Exception(f"Coolign tower Merkel is higher than required Tlow={a}, LG = {lg_ratio} ME = {me_avail}")
             else:
-                error_message = f"Cooling tower Merkel is lower than required Tlow={a}, LG = {lg_ratio} ME = {me_avail}"
-                raise Exception(error_message)
+                raise Exception(f"Cooling tower Merkel is lower than required Tlow={a}, LG = {lg_ratio} ME = {me_avail}")
 
         t_out_res = t_out_final
         t_in_res = t_out_res + delta_t
         if return_units:
-            return Q_(t_in_res, u.degC), Q_(t_out_res, u.degC), error_message
+            return Q_(t_in_res, u.degC), Q_(t_out_res, u.degC)
         else:
-            return t_in_res, t_out_res, error_message
+            return t_in_res, t_out_res
     def find_operating_lg(self):
         def objective(lg):
             lg = float(lg)

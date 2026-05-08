@@ -11,7 +11,6 @@ from .units_descriptor import cleans_simple
 
 class PoppeSolver(SolverMixin, TemporarySetMixin):
     def poppe_system(self, tw, y):
-        print(tw, y)
         ha, omega = y
         h_sw = self.air_in.saturated_air_enthalpy(temp=tw)
         w_sw = self.air_in.saturated_omega(temp=tw)
@@ -20,8 +19,7 @@ class PoppeSolver(SolverMixin, TemporarySetMixin):
         cp_w = self.water_in.specific_heat(temp=tw)
         d_ha_dtw = self.lg_ratio * cp_w
         t_air_dry = self.air_in.temperature_from_h_w(ha, omega)
-        
-        w_sw_air = self.air_in.omega(temp=t_air_dry, rh=1.0)
+        w_sw_air = self.air_in.saturated_omega(temp=t_air_dry)
         if omega >= w_sw_air:
             t_air_sat = self.air_in.t_air_from_enthalpy_saturated(ha, tw)
             cp_as = self.air_in.cp_saturated_air(temp=t_air_sat)
@@ -33,35 +31,32 @@ class PoppeSolver(SolverMixin, TemporarySetMixin):
             d_omega_dtw = (cp_w * self.lg_ratio * (w_sw - omega)) / max(denom, 1e-7)
         return [d_ha_dtw, d_omega_dtw]
 
-    def solve(self, lg_ratio=None):
+    def solve(self, lg_ratio=None, steps=100):
         lg = lg_ratio if lg_ratio is not None else self.lg_ratio
-        ha_in = self.air_in.wet_air_enthalpy()
-        omega_in = self.air_in.omega()
-        y0 = [ha_in, omega_in]
-
-        try:
-            sol = solve_ivp(
-                self.poppe_system,
-                (self.water_out.temp, self.water_in.temp),
-                y0,
-                t_eval=np.linspace(self.water_out.temp, self.water_in.temp, 50),
-                method='Radau',
-                rtol=1e-4,
-                atol=1e-7,
-                max_step=0.5
-            )
-        except ValueError as e:
-            raise ValueError(f"Poppe solver failed: {e}") from None
-
-        if sol.status != 0:
-            raise ValueError(
-                f"Poppe solver did not converge: {sol.message}\n"
-                f"Reached tw={sol.t[-1]:.2f}°C of {self.water_in.temp:.2f}°C"
-            )
-        air_temperatures, air_humidities = self.decode_results(h_array=sol.y[0], omega_array=sol.y[1], press=self.air_in.press)
+        ha_initial = self.air_in.wet_air_enthalpy()
+        omega_initial = self.air_in.omega()
+        t_water_profile = np.linspace(self.water_out.temp, 
+                                self.water_in.temp, steps)
+        sol = solve_ivp(
+            self.poppe_system,
+            (self.water_out.temp, self.water_in.temp),
+            (ha_initial, omega_initial),
+            t_eval=t_water_profile,
+            method='Radau',
+            rtol=1e-4,
+            atol=1e-7,
+            max_step=0.5
+        )
+        if not sol.success:
+            raise Exception(f"Failed to solve Poppe system: {sol.message}")
+        h_air_profile = sol.y[0]
+        omega_profile = sol.y[1]
+        t_water_profile = sol.t
+        air_temperatures, air_humidities = self.decode_results(
+            h_array=h_air_profile, omega_array=omega_profile, press=self.air_in.press)
         zones = []
         fog_water = []
-        for i, (h, w, t_a) in enumerate(zip(sol.y[0], sol.y[1], air_temperatures)):
+        for i, (h, w, t_a) in enumerate(zip(h_air_profile, omega_profile, air_temperatures)):
             w_sw_air = self.air_in.omega(temp=t_a, rh=1.0)
             if w > w_sw_air:
                 zones.append("fog")
@@ -71,16 +66,16 @@ class PoppeSolver(SolverMixin, TemporarySetMixin):
                 fog_water.append(0.0)
 
         self.profiles = pd.DataFrame({
-            "water_temp_c":      sol.t,
+            "water_temp_c":      t_water_profile,
             "air_temp_c":        air_temperatures,
             "air_rh_perc":       air_humidities*100.0,
-            "air_omega_kg_kg":   sol.y[1],
-            "air_enthalpy_j_kg": sol.y[0],
-            "fog_kg_kg":          fog_water,   # туман в г воды на кг сухого воздуха
+            "air_omega_kg_kg":   omega_profile,
+            "air_enthalpy_j_kg": h_air_profile,
+            "fog_kg_kg":         fog_water,   # туман в г воды на кг сухого воздуха
             "zone":              zones
         })
-        omega_out = sol.y[1][-1]
-        omega_in  = sol.y[1][0]
+        omega_out = omega_profile[-1]
+        omega_in  = omega_profile[0]
 
         t_air_out = air_temperatures[-1]
         w_sw_air_out = self.air_in.omega(temp=t_air_out, rh=1.0)

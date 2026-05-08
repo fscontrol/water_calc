@@ -8,8 +8,9 @@ class WaterFlow(UnitMagicMixin, TemporarySetMixin):
     tds = Unit(QuantityType.TDS)
     
     @cleans_simple(temp=u.degC, salinity=u.g/u.kg)
-    def __init__(self, temp=35.0, salinity=1.0, **kwargs):
+    def __init__(self, temp=35.0, salinity=1.0, flow=1.0, **kwargs):
         self.temp, self.salinity = temp, salinity 
+        self.flow = flow
         for k, v in kwargs.items():
             setattr(self, k, v)
     
@@ -50,3 +51,10 @@ class WaterFlow(UnitMagicMixin, TemporarySetMixin):
         cp_fresh = 4185.5 + 0.1 * temp
         cp_brine = cp_fresh - salinity * (5.2 - 0.02 * temp)
         return cp_brine
+    
+    def apply_evaporation(self):
+        self.flow = self.flow * (1 - self.evaporation)
+        self.salinity = self.salinity / (1 - self.evaporation)
+    
+    def __str__(self):
+        return f"WaterFlow(temp={self.temp}, salinity={self.salinity})"
